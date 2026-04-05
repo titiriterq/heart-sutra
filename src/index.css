@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Gulim", "굴림", "Dotum", "돋움", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-gray-900;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-normal font-bold;
+  }
+}
+
+/* Leaflet Aesthetic Utilities */
+.leaflet-text-blue {
+  color: #0000FF;
+}
+
+.leaflet-text-red {
+  color: #FF0000;
+}
+
+.leaflet-bg-yellow {
+  background-color: #FFFF00;
+}
+
+/* Prose overrides for Quill HTML */
+.prose-leaflet {
+  @apply max-w-none;
+  --tw-prose-body: #000;
+  --tw-prose-headings: #0000FF;
+  --tw-prose-links: #FF0000;
+}
+
+.prose-leaflet img {
+  @apply max-w-full h-auto my-6 block mx-auto;
+}
+
+.prose-leaflet h1 { @apply text-3xl font-bold mb-4; }
+.prose-leaflet h2 { @apply text-2xl font-bold mb-3; }
+.prose-leaflet h3 { @apply text-xl font-bold mb-2; }
+.prose-leaflet p { @apply mb-4 leading-relaxed; }
+.prose-leaflet ul { @apply list-disc pl-6 mb-4; }
+.prose-leaflet ol { @apply list-decimal pl-6 mb-4; }
+
+/* Quill Editor Overrides */
+.ql-editor {
+  @apply font-sans text-base;
+  min-height: 200px;
+}
+
+.ql-container.ql-snow {
+  @apply border-gray-300;
+}
+
+.ql-toolbar.ql-snow {
+  @apply border-gray-300 bg-gray-50;
+}

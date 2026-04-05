@@ -1,0 +1,53 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Fields:
+//   - email: string (required, email format)
+//   - role: string (required, 'admin' or 'user')
+//
+// Collection: posts
+// Fields:
+//   - title: string (required, 1-200 chars)
+//   - content: string (required, 1-10000 chars)
+//   - createdAt: timestamp (required)
+//   - authorId: string (required, UID)
+//   - imageUrl: string (optional, valid URL)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if the user is the admin
+    function isAdmin() {
+      return request.auth != null && 
+             request.auth.token.email == "rumm030419@gmail.com" && 
+             request.auth.token.email_verified == true;
+    }
+
+    // Posts: Anyone can read public ones, only admin can read all and write
+    match /posts/{postId} {
+      allow read: if isAdmin() || resource.data.isPublic == true;
+      allow create, update, delete: if isAdmin();
+
+      // Comments: Anyone can read and create, only admin can delete
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if true;
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Users: Only admin can read/write all, users can read/write their own (if needed)
+    match /users/{userId} {
+      allow read, write: if isAdmin() || (request.auth != null && request.auth.uid == userId);
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

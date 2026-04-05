@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "Post": {
+      "title": "Blog Post",
+      "description": "A single blog post entry.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the post."
+        },
+        "content": {
+          "type": "string",
+          "description": "The markdown content of the post."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the post was created."
+        },
+        "authorId": {
+          "type": "string",
+          "description": "The UID of the author."
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Optional image URL for the post."
+        }
+      },
+      "required": ["title", "content", "createdAt", "authorId"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "User information and roles.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "user"]
+        }
+      },
+      "required": ["email", "role"]
+    },
+    "Comment": {
+      "title": "Blog Comment",
+      "description": "An anonymous comment on a blog post.",
+      "type": "object",
+      "properties": {
+        "postId": {
+          "type": "string",
+          "description": "The ID of the post this comment belongs to."
+        },
+        "content": {
+          "type": "string",
+          "description": "The content of the comment."
+        },
+        "ip": {
+          "type": "string",
+          "description": "The IP address of the commenter."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the comment was created."
+        },
+        "parentId": {
+          "type": "string",
+          "description": "The ID of the parent comment for nested replies."
+        }
+      },
+      "required": ["postId", "content", "ip", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Collection of blog posts."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Collection of comments for a specific post."
+    }
+  }
+}
