@@ -10,8 +10,7 @@ import {
   doc, 
   setDoc,
   Timestamp,
-  serverTimestamp,
-  where
+  serverTimestamp
 } from 'firebase/firestore';
 import { 
   signInWithPopup, 
@@ -288,11 +287,19 @@ export default function App() {
     return () => { unsubscribe(); unsubImage(); };
   }, []);
 
+  // 1번 해결: Firebase 인덱스 에러 방지를 위해 클라이언트 단에서 비공개 글 필터링 적용
   useEffect(() => {
-    let q = isAdmin ? query(collection(db, 'posts'), orderBy('createdAt', 'desc')) 
-                    : query(collection(db, 'posts'), where('isPublic', '==', true), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
     
-    const unsubPosts = onSnapshot(q, (snapshot) => setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post))));
+    const unsubPosts = onSnapshot(q, (snapshot) => {
+      let fetchedPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+      
+      // 관리자가 아니면 비공개 글(isPublic: false) 숨기기
+      if (!isAdmin) {
+        fetchedPosts = fetchedPosts.filter(p => p.isPublic !== false);
+      }
+      setPosts(fetchedPosts);
+    });
     
     let unsubVisitors = () => {};
     if (isAdmin) {
@@ -365,6 +372,7 @@ export default function App() {
                       Form does not differ from emptiness; emptiness does not differ from form.
                     </p>
                   </div>
+                  {/* 2번 해결: 관리자용 이미지 수정 버튼 */}
                   {isAdmin && (
                     <button onClick={handleEditHomeImage} className="absolute top-4 right-4 bg-blue-600 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10">
                       <ImageIcon className="w-5 h-5" />
