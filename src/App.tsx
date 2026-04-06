@@ -10,7 +10,8 @@ import {
   doc, 
   setDoc,
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  where
 } from 'firebase/firestore';
 import { 
   signInWithPopup, 
@@ -22,7 +23,7 @@ import {
 import { db, auth } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Plus, LogOut, LogIn, Edit2, Trash2, ChevronRight, X, Menu, Settings, Users, MessageSquare, Image as ImageIcon
+  Plus, LogOut, LogIn, Edit2, Trash2, ChevronRight, X, Menu, Settings, Users, MessageSquare, Image as ImageIcon, Video
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import ReactQuill from 'react-quill-new';
@@ -31,7 +32,7 @@ import { format } from 'date-fns';
 import { cn } from './lib/utils';
 
 // --- Types ---
-interface Post { id: string; title: string; content: string; createdAt: Timestamp; authorId: string; imageUrl?: string; isPublic: boolean; }
+interface Post { id: string; title: string; content: string; createdAt: Timestamp; authorId: string; imageUrl?: string; videoUrl?: string; isPublic: boolean; }
 interface Comment { id: string; postId: string; content: string; ip: string; createdAt: Timestamp; parentId?: string; }
 interface Visitor { id: string; ip: string; visitedAt: Timestamp; }
 
@@ -141,11 +142,16 @@ const ThreadSection = ({ collectionName, title, isAdmin }: { collectionName: str
     e.preventDefault();
     if (!newComment.trim() || isSubmitting) return;
     setIsSubmitting(true);
+    let maskedIp = 'unknown';
     try {
       const ipRes = await fetch('https://api.ipify.org?format=json');
-      const { ip } = await ipRes.json();
-      const maskedIp = ip.split('.').slice(0, 2).join('.') + '.*.*';
+      if (ipRes.ok) {
+        const { ip } = await ipRes.json();
+        maskedIp = ip.split('.').slice(0, 2).join('.') + '.*.*';
+      }
+    } catch (e) { console.error("IP fetch failed, continuing anonymized."); }
 
+    try {
       await addDoc(collection(db, collectionName), {
         content: newComment.trim(),
         ip: maskedIp,
@@ -156,6 +162,7 @@ const ThreadSection = ({ collectionName, title, isAdmin }: { collectionName: str
       setReplyTo(null);
     } catch (err) {
       console.error("Comment failed:", err);
+      alert("댓글 작성에 실패했습니다.");
     } finally {
       setIsSubmitting(false);
     }
@@ -176,7 +183,7 @@ const ThreadSection = ({ collectionName, title, isAdmin }: { collectionName: str
   const rootComments = comments.filter(c => !c.parentId);
 
   return (
-    <div className="mt-12 pt-12 border-t border-gray-100 space-y-8 w-full max-w-4xl mx-auto">
+    <div className="mt-12 pt-12 border-t border-gray-100 space-y-8 w-full max-w-4xl mx-auto font-sans">
       <div className="flex justify-between items-center">
         <h3 className="text-2xl font-bold text-blue-700 uppercase tracking-tight">{title}</h3>
         <span className="text-xs font-bold text-gray-400 uppercase">{comments.length} Thoughts</span>
@@ -207,16 +214,17 @@ const PostEditor = ({ post, onSave, onCancel }: any) => {
   const [isPublic, setIsPublic] = useState(post?.isPublic !== false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // 영상 첨부 기능 활성화
   const modules = {
     toolbar: [
       [{ 'header': [1, 2, 3, false] }],
       ['bold', 'italic', 'underline', 'strike'],
       [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-      ['link', 'image'],
+      ['link', 'image', 'video'], // 'video' 버튼 추가
       ['clean']
     ],
   };
-  const formats = ['header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'link', 'image'];
+  const formats = ['header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'link', 'image', 'video'];
 
   const handlePublish = async () => {
     if (!title.trim() || !content.trim()) return alert('제목과 내용을 모두 입력해주세요.');
@@ -226,7 +234,7 @@ const PostEditor = ({ post, onSave, onCancel }: any) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-white/95 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-white/95 z-[100] flex items-center justify-center p-4 font-sans">
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white border border-gray-300 w-full max-w-4xl p-8 shadow-2xl h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-8 border-b pb-4">
           <h2 className="text-3xl font-bold text-blue-700 uppercase">{post ? 'Edit Teaching' : 'New Teaching'}</h2>
@@ -272,9 +280,11 @@ export default function App() {
       try {
         if (!sessionStorage.getItem('visited')) {
           const res = await fetch('https://api.ipify.org?format=json');
-          const { ip } = await res.json();
-          await addDoc(collection(db, 'visitors'), { ip, visitedAt: serverTimestamp() });
-          sessionStorage.setItem('visited', 'true');
+          if (res.ok) {
+            const { ip } = await res.json();
+            await addDoc(collection(db, 'visitors'), { ip, visitedAt: serverTimestamp() });
+            sessionStorage.setItem('visited', 'true');
+          }
         }
       } catch (e) { console.log("Visitor tracking skipped"); }
     };
@@ -287,18 +297,26 @@ export default function App() {
     return () => { unsubscribe(); unsubImage(); };
   }, []);
 
-  // 1번 해결: Firebase 인덱스 에러 방지를 위해 클라이언트 단에서 비공개 글 필터링 적용
+  // Firebase 인덱스 에러 방지를 위해 클라이언트 단에서 비공개 글 필터링 적용
   useEffect(() => {
     const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
     
     const unsubPosts = onSnapshot(q, (snapshot) => {
       let fetchedPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
-      
-      // 관리자가 아니면 비공개 글(isPublic: false) 숨기기
-      if (!isAdmin) {
-        fetchedPosts = fetchedPosts.filter(p => p.isPublic !== false);
-      }
+      if (!isAdmin) fetchedPosts = fetchedPosts.filter(p => p.isPublic !== false);
       setPosts(fetchedPosts);
+    }, (error) => {
+        console.error("Firestore fetch error:", error);
+        // 인덱스 에러 시 비공개 글 필터링 없이 일단 최신순으로 가져오도록 우회
+        if (error.message.includes('failed-precondition')) {
+            onSnapshot(collection(db, 'posts'), (snapshot) => {
+                let fetchedPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+                // 수동 정렬
+                fetchedPosts.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+                if (!isAdmin) fetchedPosts = fetchedPosts.filter(p => p.isPublic !== false);
+                setPosts(fetchedPosts);
+            });
+        }
     });
     
     let unsubVisitors = () => {};
@@ -328,7 +346,20 @@ export default function App() {
   const handleSavePost = async (data: any) => {
     if (!isAdmin) return;
     const path = editingPost === 'new' ? 'posts' : `posts/${(editingPost as Post).id}`;
-    const postData = { title: data.title, content: data.content, isPublic: data.isPublic };
+    
+    // 에디터 내용에서 영상 및 이미지 URL 추출
+    const parser = new DOMParser();
+    const docObj = parser.parseFromString(data.content, 'text/html');
+    
+    // 영상 추출 (유튜브 등 iframe)
+    const firstVideo = docObj.querySelector('iframe, video');
+    const videoUrl = firstVideo ? firstVideo.getAttribute('src') : null;
+
+    // 이미지 추출 (영상이 없을 때 목록 썸네일로 사용)
+    const firstImg = docObj.querySelector('img');
+    const imageUrl = firstImg ? firstImg.src : null;
+
+    const postData = { title: data.title, content: data.content, isPublic: data.isPublic, imageUrl, videoUrl };
     try {
       if (editingPost === 'new') await addDoc(collection(db, path), { ...postData, createdAt: serverTimestamp(), authorId: user?.uid });
       else await updateDoc(doc(db, 'posts', (editingPost as Post).id), postData);
@@ -341,10 +372,10 @@ export default function App() {
     if (window.confirm("Delete this teaching?")) await deleteDoc(doc(db, 'posts', id));
   };
 
-  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="text-blue-600 animate-pulse font-bold uppercase tracking-widest">Loading...</div></div>;
+  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="text-blue-600 animate-pulse font-bold uppercase tracking-widest font-sans">Loading...</div></div>;
 
   return (
-    <div className="min-h-screen bg-white font-sans selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-white selection:bg-blue-600 selection:text-white font-sans Gulim Dotum sans-serif">
       <CultHeader user={user} onLogin={handleLogin} onLogout={handleLogout} isAdmin={isAdmin} toggleMenu={() => setIsSidebarOpen(true)} />
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} isAdmin={isAdmin} setView={setView} />
 
@@ -365,19 +396,18 @@ export default function App() {
                 </div>
 
                 <div className="relative w-full overflow-hidden border border-gray-200 shadow-2xl group">
-                  <img src={homeImageUrl} alt="Hero" className="w-full h-auto" referrerPolicy="no-referrer" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-white/40 to-transparent pointer-events-none" />
-                  <div className="absolute bottom-4 left-4 right-4 bg-white/80 backdrop-blur-sm p-4 border border-gray-200 pointer-events-none">
-                    <p className="text-blue-700 font-bold text-center uppercase text-xs md:text-sm">
-                      Form does not differ from emptiness; emptiness does not differ from form.
-                    </p>
-                  </div>
-                  {/* 2번 해결: 관리자용 이미지 수정 버튼 */}
+                  <img src={homeImageUrl} alt="Hero" className="w-full h-auto object-cover max-h-[600px]" referrerPolicy="no-referrer" />
                   {isAdmin && (
                     <button onClick={handleEditHomeImage} className="absolute top-4 right-4 bg-blue-600 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10">
                       <ImageIcon className="w-5 h-5" />
                     </button>
                   )}
+                </div>
+                
+                <div className="w-full p-4 mt-4 text-center">
+                    <p className="text-blue-700 font-bold uppercase text-xs md:text-sm">
+                      Form does not differ from emptiness; emptiness does not differ from form.
+                    </p>
                 </div>
 
                 <div className="w-full p-6 text-center mt-12">
@@ -389,9 +419,7 @@ export default function App() {
                   </p>
                 </div>
 
-                <button onClick={() => setView('feed')} className="mt-8 bg-blue-600 text-white px-12 py-4 text-xl font-bold uppercase hover:bg-blue-700 transition-colors shadow-lg">
-                  Enter the Path
-                </button>
+                <button onClick={() => setView('feed')} className="mt-8 bg-blue-600 text-white px-12 py-4 text-xl font-bold uppercase hover:bg-blue-700 shadow-lg">Enter the Path</button>
               </div>
             </motion.div>
           )}
@@ -405,11 +433,12 @@ export default function App() {
               <div className="space-y-4">
                 {posts.length > 0 ? (
                   <div className="divide-y divide-gray-100 border-t border-b border-gray-100">
-                    {posts.map((post, index) => (
+                    {posts.map((post) => (
                       <motion.div key={post.id} className="group flex items-center justify-between py-6 cursor-pointer hover:bg-gray-50/50 px-4 transition-all" onClick={() => { setSelectedPostId(post.id); setView('post'); }}>
                         <div className="flex items-center gap-6">
-                          <span className="text-[10px] font-bold text-gray-300 group-hover:text-blue-600 transition-colors">{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
+                          {/* 글 번호 (01, 02...) 삭제됨 */}
                           <h3 className="text-lg md:text-xl font-bold text-gray-900 group-hover:text-blue-700 uppercase tracking-tight">{post.title}</h3>
+                          {post.videoUrl && <Video className="w-4 h-4 text-red-600" />} {/* 영상 포함 표시 */}
                           {isAdmin && !post.isPublic && <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 font-bold uppercase tracking-widest">Private</span>}
                         </div>
                         <div className="flex items-center gap-4">
@@ -432,7 +461,7 @@ export default function App() {
           )}
 
           {view === 'post' && selectedPost && (
-            <motion.div key="post" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl mx-auto px-4 py-12">
+            <motion.div key="post" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl mx-auto px-4 py-12 Gulim Dotum sans-serif">
               <button onClick={() => setView('feed')} className="mb-8 flex items-center gap-2 text-gray-400 hover:text-blue-600 font-bold uppercase text-xs transition-colors">
                 <ChevronRight className="w-4 h-4 rotate-180" /> Back to path
               </button>
@@ -441,20 +470,22 @@ export default function App() {
                   <h2 className="text-4xl md:text-6xl font-bold text-blue-700 uppercase tracking-tighter italic">{selectedPost.title}</h2>
                   <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">{selectedPost.createdAt ? format(selectedPost.createdAt.toDate(), 'yyyy.MM.dd') : '...'}</div>
                 </div>
-                <div className="prose prose-leaflet max-w-none text-gray-800 leading-relaxed"><div dangerouslySetInnerHTML={{ __html: selectedPost.content }} /></div>
+                <div className="prose prose-leaflet max-w-none text-gray-800 leading-relaxed ql-editor ql-snow ql-blank selection:bg-blue-200">
+                  <div dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
+                </div>
               </article>
               <ThreadSection collectionName={`posts/${selectedPost.id}/comments`} title="Comments" isAdmin={isAdmin} />
             </motion.div>
           )}
 
           {view === 'board' && (
-            <motion.div key="board" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="max-w-5xl mx-auto px-4 py-12">
+            <motion.div key="board" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="max-w-5xl mx-auto px-4 py-12 Gulim Dotum sans-serif">
               <ThreadSection collectionName="anonymous_board" title="僧伽" isAdmin={isAdmin} />
             </motion.div>
           )}
 
           {view === 'admin' && isAdmin && (
-            <motion.div key="admin" className="max-w-5xl mx-auto px-4 py-12 space-y-12">
+            <motion.div key="admin" className="max-w-5xl mx-auto px-4 py-12 space-y-12 font-sans">
               <h2 className="text-4xl font-bold text-blue-700 uppercase border-b border-gray-200 pb-4">Admin Dashboard</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="bg-gray-50 p-6 border border-gray-200">
@@ -466,11 +497,11 @@ export default function App() {
                   <div className="text-[10px] font-bold text-blue-400 uppercase">Visitors</div>
                 </div>
               </div>
-              <div className="bg-white border border-gray-200 p-6 max-h-[400px] overflow-y-auto">
+              <div className="bg-white border border-gray-200 p-6 max-h-[400px] overflow-y-auto Gulim Dotum sans-serif">
                 <h3 className="font-bold text-lg mb-4 text-gray-700 uppercase">Recent Visitors (IP Log)</h3>
                 <ul className="space-y-2 text-sm text-gray-600">
                   {visitors.slice(0, 50).map(v => (
-                     <li key={v.id} className="flex justify-between border-b py-2">
+                     <li key={v.id} className="flex justify-between border-b py-2 Gulim Dotum sans-serif">
                        <span className="font-mono">{v.ip}</span>
                        <span>{v.visitedAt ? format(v.visitedAt.toDate(), 'yyyy.MM.dd HH:mm') : '-'}</span>
                      </li>
@@ -484,10 +515,10 @@ export default function App() {
 
       {editingPost && <PostEditor post={editingPost === 'new' ? null : editingPost} onSave={handleSavePost} onCancel={() => setEditingPost(null)} />}
 
-      <footer className="bg-white py-12 px-4 mt-20 border-t border-gray-100">
-        <div className="max-w-4xl mx-auto text-center space-y-4">
-          <h3 className="text-2xl font-bold text-blue-700 uppercase tracking-tight">Heart Sutra</h3>
-          <p className="text-[10px] font-bold text-gray-400 uppercase">© 2026 GATE GATE PĀRAGATE. ALL RIGHTS RESERVED.</p>
+      <footer className="bg-white py-12 px-4 mt-20 border-t border-gray-100 Gulim Dotum sans-serif">
+        <div className="max-w-4xl mx-auto text-center space-y-4 Gulim Dotum sans-serif">
+          <h3 className="text-2xl font-bold text-blue-700 uppercase tracking-tight Gulim Dotum sans-serif">Heart Sutra</h3>
+          <p className="text-[10px] font-bold text-gray-400 uppercase Gulim Dotum sans-serif">© 2026 GATE GATE PĀRAGATE. ALL RIGHTS RESERVED.</p>
         </div>
       </footer>
     </div>
