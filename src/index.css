@@ -59,3 +59,13 @@
 .ql-toolbar.ql-snow {
   @apply border-gray-300 bg-gray-50;
 }
+/* 전역 폰트를 굴림/산스로 통일하고 기울임 해제 */
+* {
+  font-family: 'Gulim', 'dotum', sans-serif !important;
+  font-style: normal !important; /* 모든 기울임 강제 해제 */
+}
+
+/* 제목이나 강조하고 싶은 부분만 굵게 설정 */
+h1, h2, h3, .title, b, strong {
+  font-weight: bold;
+}
