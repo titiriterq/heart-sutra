@@ -10,8 +10,7 @@ import {
   doc, 
   setDoc,
   Timestamp,
-  serverTimestamp,
-  where
+  serverTimestamp
 } from 'firebase/firestore';
 import { 
   signInWithPopup, 
@@ -23,9 +22,8 @@ import {
 import { db, auth } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Plus, LogOut, LogIn, Edit2, Trash2, ChevronRight, X, Menu, Settings, Users, MessageSquare, Image as ImageIcon, Video
+  Plus, LogIn, Edit2, Trash2, ChevronRight, X, Menu, Users, Image as ImageIcon, Video
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { format } from 'date-fns';
@@ -39,13 +37,16 @@ interface Visitor { id: string; ip: string; visitedAt: Timestamp; }
 const ADMIN_EMAIL = "rumm030419@gmail.com";
 
 // --- Components ---
-const CultHeader = ({ user, onLogin, onLogout, isAdmin, toggleMenu }: any) => (
+const CultHeader = ({ user, onLogin, onLogout, toggleMenu, onLogoClick }: any) => (
   <header className="fixed top-0 left-0 w-full z-50 bg-white/90 backdrop-blur-sm border-b border-gray-200 px-4 py-2 flex justify-between items-center">
     <div className="flex items-center gap-4">
       <button onClick={toggleMenu} className="p-1 hover:bg-gray-100 rounded transition-colors">
         <Menu className="w-6 h-6 text-blue-700" />
       </button>
-      <h1 className="text-xl md:text-2xl font-bold text-blue-700 tracking-tight uppercase">Heart Sutra</h1>
+      {/* 🚀 추가됨: 로고 클릭 시 홈으로 이동 */}
+      <button onClick={onLogoClick} className="text-xl md:text-2xl font-bold text-blue-700 tracking-tight uppercase hover:text-blue-900 transition-colors">
+        Heart Sutra
+      </button>
     </div>
     <div className="flex items-center gap-4">
       {user ? (
@@ -73,11 +74,11 @@ const Sidebar = ({ isOpen, onClose, isAdmin, setView }: any) => (
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
           </div>
           <nav className="flex flex-col gap-6">
-            <button onClick={() => { setView('home'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors group text-left">Home</button>
-            <button onClick={() => { setView('feed'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors group text-left">Teachings</button>
-            <button onClick={() => { setView('board'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors group text-left">僧伽</button>
+            <button onClick={() => { setView('home'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors">Home</button>
+            <button onClick={() => { setView('feed'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors">Teachings</button>
+            <button onClick={() => { setView('board'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors">僧伽</button>
             {isAdmin && (
-              <button onClick={() => { setView('admin'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors group text-left">Admin</button>
+              <button onClick={() => { setView('admin'); onClose(); }} className="flex items-center gap-4 text-lg font-bold text-gray-700 hover:text-blue-700 transition-colors">Admin</button>
             )}
           </nav>
           <div className="mt-auto pt-6 border-t border-gray-100">
@@ -183,7 +184,7 @@ const ThreadSection = ({ collectionName, title, isAdmin }: { collectionName: str
   const rootComments = comments.filter(c => !c.parentId);
 
   return (
-    <div className="mt-12 pt-12 border-t border-gray-100 space-y-8 w-full max-w-4xl mx-auto font-sans">
+    <div className="mt-12 pt-12 border-t border-gray-100 space-y-8 w-full max-w-4xl mx-auto">
       <div className="flex justify-between items-center">
         <h3 className="text-2xl font-bold text-blue-700 uppercase tracking-tight">{title}</h3>
         <span className="text-xs font-bold text-gray-400 uppercase">{comments.length} Thoughts</span>
@@ -234,7 +235,7 @@ const PostEditor = ({ post, onSave, onCancel }: any) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-white/95 z-[100] flex items-center justify-center p-4 font-sans">
+    <div className="fixed inset-0 bg-white/95 z-[100] flex items-center justify-center p-4">
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white border border-gray-300 w-full max-w-4xl p-8 shadow-2xl h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-8 border-b pb-4">
           <h2 className="text-3xl font-bold text-blue-700 uppercase">{post ? 'Edit Teaching' : 'New Teaching'}</h2>
@@ -347,15 +348,12 @@ export default function App() {
     if (!isAdmin) return;
     const path = editingPost === 'new' ? 'posts' : `posts/${(editingPost as Post).id}`;
     
-    // 에디터 내용에서 영상 및 이미지 URL 추출
     const parser = new DOMParser();
     const docObj = parser.parseFromString(data.content, 'text/html');
     
-    // 영상 추출 (유튜브 등 iframe)
     const firstVideo = docObj.querySelector('iframe, video');
     const videoUrl = firstVideo ? firstVideo.getAttribute('src') : null;
 
-    // 이미지 추출 (영상이 없을 때 목록 썸네일로 사용)
     const firstImg = docObj.querySelector('img');
     const imageUrl = firstImg ? firstImg.src : null;
 
@@ -372,11 +370,17 @@ export default function App() {
     if (window.confirm("Delete this teaching?")) await deleteDoc(doc(db, 'posts', id));
   };
 
-  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="text-blue-600 animate-pulse font-bold uppercase tracking-widest font-sans">Loading...</div></div>;
+  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="text-blue-600 animate-pulse font-bold uppercase tracking-widest">Loading...</div></div>;
 
   return (
-    <div className="min-h-screen bg-white selection:bg-blue-600 selection:text-white font-sans Gulim Dotum sans-serif">
-      <CultHeader user={user} onLogin={handleLogin} onLogout={handleLogout} isAdmin={isAdmin} toggleMenu={() => setIsSidebarOpen(true)} />
+    <div className="min-h-screen bg-white">
+      <CultHeader 
+        user={user} 
+        onLogin={handleLogin} 
+        onLogout={handleLogout} 
+        toggleMenu={() => setIsSidebarOpen(true)} 
+        onLogoClick={() => setView('home')} // 🚀 로고 클릭 시 홈으로 이동
+      />
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} isAdmin={isAdmin} setView={setView} />
 
       <main className="pt-16">
@@ -396,7 +400,8 @@ export default function App() {
                 </div>
 
                 <div className="relative w-full overflow-hidden border border-gray-200 shadow-2xl group">
-                  <img src={homeImageUrl} alt="Hero" className="w-full h-auto object-cover max-h-[600px]" referrerPolicy="no-referrer" />
+                  {/* 🚀 원본 비율 유지: className에서 max-h-[...] 삭제됨 */}
+                  <img src={homeImageUrl} alt="Hero" className="w-full h-auto block" referrerPolicy="no-referrer" />
                   {isAdmin && (
                     <button onClick={handleEditHomeImage} className="absolute top-4 right-4 bg-blue-600 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10">
                       <ImageIcon className="w-5 h-5" />
@@ -404,13 +409,14 @@ export default function App() {
                   )}
                 </div>
                 
-                <div className="w-full p-4 mt-4 text-center">
+                {/* 🚀 텍스트 상자 제거 후 사진 아래로 이동 */}
+                <div className="w-full p-4 text-center">
                     <p className="text-blue-700 font-bold uppercase text-xs md:text-sm">
                       Form does not differ from emptiness; emptiness does not differ from form.
                     </p>
                 </div>
 
-                <div className="w-full p-6 text-center mt-12">
+                <div className="w-full p-6 text-center mt-8">
                   <p className="text-xl md:text-2xl font-bold text-red-600 uppercase italic">
                     Heart Sutra
                   </p>
@@ -436,9 +442,9 @@ export default function App() {
                     {posts.map((post) => (
                       <motion.div key={post.id} className="group flex items-center justify-between py-6 cursor-pointer hover:bg-gray-50/50 px-4 transition-all" onClick={() => { setSelectedPostId(post.id); setView('post'); }}>
                         <div className="flex items-center gap-6">
-                          {/* 글 번호 (01, 02...) 삭제됨 */}
+                          {/* 🚀 번호 삭제됨 */}
                           <h3 className="text-lg md:text-xl font-bold text-gray-900 group-hover:text-blue-700 uppercase tracking-tight">{post.title}</h3>
-                          {post.videoUrl && <Video className="w-4 h-4 text-red-600" />} {/* 영상 포함 표시 */}
+                          {post.videoUrl && <Video className="w-4 h-4 text-red-600" />}
                           {isAdmin && !post.isPublic && <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 font-bold uppercase tracking-widest">Private</span>}
                         </div>
                         <div className="flex items-center gap-4">
@@ -461,7 +467,7 @@ export default function App() {
           )}
 
           {view === 'post' && selectedPost && (
-            <motion.div key="post" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl mx-auto px-4 py-12 Gulim Dotum sans-serif">
+            <motion.div key="post" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-3xl mx-auto px-4 py-12">
               <button onClick={() => setView('feed')} className="mb-8 flex items-center gap-2 text-gray-400 hover:text-blue-600 font-bold uppercase text-xs transition-colors">
                 <ChevronRight className="w-4 h-4 rotate-180" /> Back to path
               </button>
@@ -470,7 +476,7 @@ export default function App() {
                   <h2 className="text-4xl md:text-6xl font-bold text-blue-700 uppercase tracking-tighter italic">{selectedPost.title}</h2>
                   <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">{selectedPost.createdAt ? format(selectedPost.createdAt.toDate(), 'yyyy.MM.dd') : '...'}</div>
                 </div>
-                <div className="prose prose-leaflet max-w-none text-gray-800 leading-relaxed ql-editor ql-snow ql-blank selection:bg-blue-200">
+                <div className="prose prose-leaflet max-w-none text-gray-800 leading-relaxed ql-editor ql-snow ql-blank">
                   <div dangerouslySetInnerHTML={{ __html: selectedPost.content }} />
                 </div>
               </article>
@@ -479,13 +485,13 @@ export default function App() {
           )}
 
           {view === 'board' && (
-            <motion.div key="board" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="max-w-5xl mx-auto px-4 py-12 Gulim Dotum sans-serif">
+            <motion.div key="board" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="max-w-5xl mx-auto px-4 py-12">
               <ThreadSection collectionName="anonymous_board" title="僧伽" isAdmin={isAdmin} />
             </motion.div>
           )}
 
           {view === 'admin' && isAdmin && (
-            <motion.div key="admin" className="max-w-5xl mx-auto px-4 py-12 space-y-12 font-sans">
+            <motion.div key="admin" className="max-w-5xl mx-auto px-4 py-12 space-y-12">
               <h2 className="text-4xl font-bold text-blue-700 uppercase border-b border-gray-200 pb-4">Admin Dashboard</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="bg-gray-50 p-6 border border-gray-200">
@@ -497,11 +503,11 @@ export default function App() {
                   <div className="text-[10px] font-bold text-blue-400 uppercase">Visitors</div>
                 </div>
               </div>
-              <div className="bg-white border border-gray-200 p-6 max-h-[400px] overflow-y-auto Gulim Dotum sans-serif">
+              <div className="bg-white border border-gray-200 p-6 max-h-[400px] overflow-y-auto">
                 <h3 className="font-bold text-lg mb-4 text-gray-700 uppercase">Recent Visitors (IP Log)</h3>
                 <ul className="space-y-2 text-sm text-gray-600">
                   {visitors.slice(0, 50).map(v => (
-                     <li key={v.id} className="flex justify-between border-b py-2 Gulim Dotum sans-serif">
+                     <li key={v.id} className="flex justify-between border-b py-2">
                        <span className="font-mono">{v.ip}</span>
                        <span>{v.visitedAt ? format(v.visitedAt.toDate(), 'yyyy.MM.dd HH:mm') : '-'}</span>
                      </li>
@@ -515,10 +521,10 @@ export default function App() {
 
       {editingPost && <PostEditor post={editingPost === 'new' ? null : editingPost} onSave={handleSavePost} onCancel={() => setEditingPost(null)} />}
 
-      <footer className="bg-white py-12 px-4 mt-20 border-t border-gray-100 Gulim Dotum sans-serif">
-        <div className="max-w-4xl mx-auto text-center space-y-4 Gulim Dotum sans-serif">
-          <h3 className="text-2xl font-bold text-blue-700 uppercase tracking-tight Gulim Dotum sans-serif">Heart Sutra</h3>
-          <p className="text-[10px] font-bold text-gray-400 uppercase Gulim Dotum sans-serif">© 2026 GATE GATE PĀRAGATE. ALL RIGHTS RESERVED.</p>
+      <footer className="bg-white py-12 px-4 mt-20 border-t border-gray-100">
+        <div className="max-w-4xl mx-auto text-center space-y-4">
+          <h3 className="text-2xl font-bold text-blue-700 uppercase tracking-tight">Heart Sutra</h3>
+          <p className="text-[10px] font-bold text-gray-400 uppercase">© 2026 GATE GATE PĀRAGATE. ALL RIGHTS RESERVED.</p>
         </div>
       </footer>
     </div>
