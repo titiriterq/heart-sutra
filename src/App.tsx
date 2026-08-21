@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   collection, 
   onSnapshot, 
@@ -209,22 +209,87 @@ const ThreadSection = ({ collectionName, title, isAdmin }: { collectionName: str
   );
 };
 
+// 🚀 이미지를 base64로 변환하기 전에 리사이즈 + 압축해서 Firestore 1MB 제한을 피함
+const compressImage = (file: File, maxWidth = 1000, quality = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new window.Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('Canvas context 생성 실패')); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('이미지 로드 실패'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('파일 읽기 실패'));
+    reader.readAsDataURL(file);
+  });
+};
+
 const PostEditor = ({ post, onSave, onCancel }: any) => {
   const [title, setTitle] = useState(post?.title || '');
   const [content, setContent] = useState(post?.content || '');
   const [isPublic, setIsPublic] = useState(post?.isPublic !== false);
   const [isSaving, setIsSaving] = useState(false);
+  const quillRef = useRef<ReactQuill>(null);
 
-  // 영상 첨부 기능 활성화
-  const modules = {
-    toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-      ['link', 'image', 'video'], // 'video' 버튼 추가
-      ['clean']
-    ],
+  // 🚀 이미지 버튼을 누르면 압축된 이미지를 삽입하도록 커스텀 핸들러 등록
+  const imageHandler = () => {
+    const input = document.createElement('input');
+    input.setAttribute('type', 'file');
+    input.setAttribute('accept', 'image/*');
+    input.click();
+
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      if (file.size > 20 * 1024 * 1024) {
+        alert('이미지 용량이 너무 큽니다. 20MB 이하 파일을 선택해주세요.');
+        return;
+      }
+
+      try {
+        const compressedDataUrl = await compressImage(file, 1000, 0.7);
+        const editor = quillRef.current?.getEditor();
+        if (!editor) return;
+        const range = editor.getSelection(true);
+        const index = range ? range.index : editor.getLength();
+        editor.insertEmbed(index, 'image', compressedDataUrl);
+        editor.setSelection(index + 1, 0);
+      } catch (err) {
+        console.error('이미지 압축 실패:', err);
+        alert('이미지를 처리하는 중 오류가 발생했습니다.');
+      }
+    };
   };
+
+  // 영상 첨부 기능 활성화 + 이미지 압축 핸들러 연결
+  const modules = useMemo(() => ({
+    toolbar: {
+      container: [
+        [{ 'header': [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+        ['link', 'image', 'video'], // 'video' 버튼 추가
+        ['clean']
+      ],
+      handlers: {
+        image: imageHandler
+      }
+    },
+  }), []);
   const formats = ['header', 'bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'link', 'image', 'video'];
 
   const handlePublish = async () => {
@@ -248,7 +313,7 @@ const PostEditor = ({ post, onSave, onCancel }: any) => {
             <label htmlFor="isPublic" className="text-xs font-bold text-gray-700 uppercase cursor-pointer">Public (Visible to everyone)</label>
           </div>
           <div className="flex-1 overflow-hidden bg-white border border-gray-200">
-            <ReactQuill theme="snow" value={content} onChange={setContent} modules={modules} formats={formats} className="h-full flex flex-col" readOnly={isSaving} />
+            <ReactQuill ref={quillRef} theme="snow" value={content} onChange={setContent} modules={modules} formats={formats} className="h-full flex flex-col" readOnly={isSaving} />
           </div>
         </div>
         <div className="flex justify-end gap-6 mt-10 pt-4 border-t">
@@ -358,11 +423,22 @@ export default function App() {
     const imageUrl = firstImg ? firstImg.src : null;
 
     const postData = { title: data.title, content: data.content, isPublic: data.isPublic, imageUrl, videoUrl };
+
+    // 🚀 Firestore 문서 용량(1MB) 초과 여부를 저장 전에 미리 확인
+    const approxSizeBytes = new Blob([JSON.stringify(postData)]).size;
+    if (approxSizeBytes > 900 * 1024) {
+      alert(`글 용량이 너무 큽니다 (약 ${(approxSizeBytes / 1024).toFixed(0)}KB). 사진 개수를 줄이거나 더 작은 사진으로 교체해주세요. (최대 약 900KB)`);
+      return;
+    }
+
     try {
       if (editingPost === 'new') await addDoc(collection(db, path), { ...postData, createdAt: serverTimestamp(), authorId: user?.uid });
       else await updateDoc(doc(db, 'posts', (editingPost as Post).id), postData);
       setEditingPost(null);
-    } catch (err) { alert("저장 실패"); }
+    } catch (err: any) {
+      console.error("저장 실패:", err);
+      alert(`저장 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
   };
 
   const handleDeletePost = async (id: string) => {
